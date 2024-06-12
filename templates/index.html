@@ -1,20 +1,32 @@
-{% load static %}
 <!DOCTYPE html>
 <html>
 <head>
-    <link href="{% static 'css/style.css' %}" rel="stylesheet">
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Sistema de Gestión Académica{% endblock %}</title>
+    <link href="{% static 'css/style.css' %}" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="dark">
+<body class="dark bg-gray-900">
 
-    {% include 'partials/navigation.html' %}
-
-    <div class="container mx-auto mt-8 px-4">
-        {% block content %}
-            <h1 class="text-3xl font-bold underline dark:text-white">Bienvenido al Sistema de Gestión Académica</h1>
-            <p class="mt-4 text-gray-200">Este es el sistema de gestión académica donde puedes administrar estudiantes, profesores, asignaturas, periodos y notas.</p>
-        {% endblock %}
+  <header id="header" class="bg-secondary">
+    <div class="container mx-auto flex justify-center items-center py-4">
+        {% include 'partials/header.html' %}
     </div>
+  </header>
+
+    <main class="container mx-auto mt-8 px-4">
+        {% block content %}
+            <h1 class="text-3xl font-bold text-white">Bienvenido al Sistema de Gestión Académica</h1>
+            <p class="mt-4 text-gray-300">Este es el sistema de gestión académica donde puedes administrar estudiantes, profesores, asignaturas, periodos y notas.</p>
+        {% endblock %}
+    </main>
+
+
+  <footer id="footer" class="bg-secondary py-4 text-center">
+    {% include 'partials/footer.html' %}
+  </footer>
 
 </body>
 </html>
