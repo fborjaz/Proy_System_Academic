@@ -1,0 +1,24 @@
+{% load static %}
+
+<nav aria-label="Menú principal">
+  <ul class="menu flex justify-center space-x-4 bg-gray-800 p-4 rounded-md" role="menubar">
+    <li role="none">
+      <a href="{% url 'index' %}" class="text-gray-300 hover:bg-gray-700 px-3 py-2 rounded-md text-sm font-medium">Inicio</a>
+    </li>
+    <li role="none">
+      <a href="{% url 'core:lista_estudiantes' %}" class="text-gray-300 hover:bg-gray-700 px-3 py-2 rounded-md text-sm font-medium">Estudiantes</a>
+    </li>
+    <li role="none">
+      <a href="{% url 'core:lista_profesores' %}" class="text-gray-300 hover:bg-gray-700 px-3 py-2 rounded-md text-sm font-medium">Profesores</a>
+    </li>
+    <li role="none">
+      <a href="{% url 'core:lista_asignaturas' %}" class="text-gray-300 hover:bg-gray-700 px-3 py-2 rounded-md text-sm font-medium">Asignaturas</a>
+    </li>
+    <li role="none">
+      <a href="{% url 'core:lista_periodos' %}" class="text-gray-300 hover:bg-gray-700 px-3 py-2 rounded-md text-sm font-medium">Periodos</a>
+    </li>
+    <li role="none">
+      <a href="{% url 'core:lista_notas' %}" class="text-gray-300 hover:bg-gray-700 px-3 py-2 rounded-md text-sm font-medium">Notas</a>
+    </li>
+  </ul>
+</nav>

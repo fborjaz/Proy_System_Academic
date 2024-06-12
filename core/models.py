@@ -60,7 +60,6 @@ class Estudiante(models.Model):  # Definición del modelo Estudiante
     fecha_nacimiento = models.DateField()
     email = models.EmailField()
 
-    # Campos adicionales del caso de estudio:
     user = models.ForeignKey('auth.User', on_delete=models.CASCADE)
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
@@ -77,7 +76,7 @@ class Nota(models.Model):
     periodo = models.ForeignKey(Periodo, on_delete=models.CASCADE)
     asignatura = models.ForeignKey(Asignatura, on_delete=models.CASCADE)
     profesor = models.ForeignKey(Profesor, on_delete=models.CASCADE)
-    estudiante = models.ForeignKey('core.Estudiante', on_delete=models.CASCADE)  # Usa el nombre completo del modelo
+    estudiante = models.ForeignKey('core.Estudiante', on_delete=models.CASCADE)
     nota1 = models.DecimalField(max_digits=4, decimal_places=2)
     nota2 = models.DecimalField(max_digits=4, decimal_places=2)
     recuperacion = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)

@@ -1,0 +1,20 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <link href="{% static 'css/style.css' %}" rel="stylesheet">
+    <title>{% block title %}Sistema de Gestión Académica{% endblock %}</title>
+</head>
+<body class="dark">
+
+    {% include 'partials/navigation.html' %}
+
+    <div class="container mx-auto mt-8 px-4">
+        {% block content %}
+            <h1 class="text-3xl font-bold underline dark:text-white">Bienvenido al Sistema de Gestión Académica</h1>
+            <p class="mt-4 text-gray-200">Este es el sistema de gestión académica donde puedes administrar estudiantes, profesores, asignaturas, periodos y notas.</p>
+        {% endblock %}
+    </div>
+
+</body>
+</html>
