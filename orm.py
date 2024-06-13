@@ -1,132 +1,484 @@
 import os
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'app_academy.settings')
 import django
+import random
+from django.db import models
+from django.core.exceptions import ObjectDoesNotExist
+from datetime import date, datetime, timedelta
+from django.utils import timezone
+from django.db.models import Q, Avg, Count, F, Value, CharField
+from django.http import Http404
+from django.shortcuts import get_object_or_404
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'app_academy.settings')
 django.setup()
 
-from django.db.models import Q, Avg, Count, Max, Min, Sum, F
-from django.core.exceptions import ObjectDoesNotExist
-from django.shortcuts import get_object_or_404
-from datetime import date, datetime, timedelta
-from decimal import Decimal
+from django.contrib.auth.models import User
 
-from core.models import (
-    Periodo, Asignatura, Profesor, Estudiante, Nota, DetalleNota
-)
+class SoftDeleteManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(state=True)
 
-# ------------------------------------------------------------------------------
-# CONSULTAS
-# ------------------------------------------------------------------------------
+class SoftDeleteModel(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+    state = models.BooleanField(default=True)
 
-def estudiantes_empiezan_con_Est():
-    return Estudiante.objects.filter(nombre__startswith="Est")
+    objects = SoftDeleteManager()
+    all_objects = models.Manager()
 
-def profesores_contienen_or():
-    return Profesor.objects.filter(nombre__icontains="or")
+    class Meta:
+        abstract = True
 
-def asignaturas_terminan_en_10():
-    return Asignatura.objects.filter(descripcion__endswith="10")
+    def delete(self, using=None, keep_parents=False):
+        self.state = False
+        self.save()
 
-def estudiantes_empiezan_con_Est_terminan_en_1():
-    return Estudiante.objects.filter(Q(nombre__startswith="Est") & Q(cedula__endswith="1"))
+    def restore(self):
+        self.state = True
+        self.save()
 
-def asignaturas_contienen_Asig_o_terminan_en_5():
-    return Asignatura.objects.filter(Q(descripcion__icontains="Asig") | Q(descripcion__endswith="5"))
+    def hard_delete(self, using=None, keep_parents=False):
+        super().delete(using=using, keep_parents=keep_parents)
 
-def profesores_no_contienen_or():
-    return Profesor.objects.exclude(nombre__icontains="or")
+class Periodo(SoftDeleteModel):
+    periodo = models.CharField(max_length=9, unique=True)
 
-def notas_entre_7_y_9():
-    return Nota.objects.filter(nota1__range=(7, 9))
+    def __str__(self):
+        return self.periodo
 
-def notas_no_entre_6_y_8():
-    return Nota.objects.exclude(nota2__range=(6, 8))
+class Asignatura(SoftDeleteModel):
+    descripcion = models.CharField(max_length=100, unique=True)
 
-def notas_ultimo_año():
-    return Nota.objects.filter(created__gte=datetime.now() - timedelta(days=365))
+    def __str__(self):
+        return self.descripcion
 
-def estudiantes_nombre_10_caracteres():
-    return Estudiante.objects.filter(nombre__exact=10)
+class Profesor(SoftDeleteModel):
+    nombre = models.CharField(max_length=255)
+    dni = models.CharField(max_length=20, unique=True)
 
-def notas_ambas_mayores_a_7_5():
-    return Nota.objects.filter(nota1__gt=7.5, nota2__gt=7.5)
+    def __str__(self):
+        return self.nombre
 
-def estudiantes_con_recuperacion():
-    return Estudiante.objects.filter(nota__recuperacion__isnull=False).distinct()
+class Estudiante(SoftDeleteModel):
+    nombre = models.CharField(max_length=255)
+    dni = models.CharField(max_length=20, unique=True)
 
-def profesores_de_matematicas_1():
-    return Profesor.objects.filter(nota__asignatura__nombre="Matemáticas I").distinct()
+    def __str__(self):
+        return self.nombre
 
-def asignaturas_con_notas():
-    return Asignatura.objects.annotate(num_notas=Count('nota')).filter(num_notas__gt=0)
+class Nota(SoftDeleteModel):
+    periodo = models.ForeignKey(Periodo, on_delete=models.CASCADE)
+    asignatura = models.ForeignKey(Asignatura, on_delete=models.CASCADE)
+    profesor = models.ForeignKey(Profesor, on_delete=models.CASCADE, null=True) # Relación con Profesor
 
-def notas_de_estudiante(cedula_estudiante):
-    estudiante = get_object_or_404(Estudiante, cedula=cedula_estudiante)
-    return estudiante.nota_set.all()
+    def __str__(self):
+        return f"Nota de {self.asignatura} en {self.periodo}"
 
-def notas_de_periodo(nombre_periodo):
-    periodo = get_object_or_404(Periodo, nombre=nombre_periodo)
-    return periodo.nota_set.all()
+class DetalleNota(SoftDeleteModel):
+    nota = models.ForeignKey(Nota, on_delete=models.CASCADE)
+    estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE)
+    nota1 = models.DecimalField(max_digits=4, decimal_places=2, default=0.0)
+    nota2 = models.DecimalField(max_digits=4, decimal_places=2, default=0.0)
+    recuperacion = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    observacion = models.TextField(blank=True)
 
-def suma_notas_estudiante(cedula_estudiante):
-    estudiante = get_object_or_404(Estudiante, cedula=cedula_estudiante)
-    return Nota.objects.filter(estudiante=estudiante).aggregate(suma=Sum('promedio'))['suma']
+    def __str__(self):
+        return f"Detalle de nota para {self.estudiante} en {self.nota}"
 
-def nota_maxima_estudiante(cedula_estudiante):
-    estudiante = get_object_or_404(Estudiante, cedula=cedula_estudiante)
-    return Nota.objects.filter(estudiante=estudiante).aggregate(Max('promedio'))['promedio__max']
+class PeriodoActivoManager(SoftDeleteManager):
+    def get_queryset(self):
+        return super().get_queryset().filter(activo=True)  # Filtrar por periodos activos
 
-def nota_minima_estudiante(cedula_estudiante):
-    estudiante = get_object_or_404(Estudiante, cedula=cedula_estudiante)
-    return Nota.objects.filter(estudiante=estudiante).aggregate(Min('promedio'))['promedio__min']
+Periodo.active_periods = PeriodoActivoManager()
 
-def promedio_notas_estudiante(cedula_estudiante):
-    estudiante = get_object_or_404(Estudiante, cedula=cedula_estudiante)
-    return Nota.objects.filter(estudiante=estudiante).aggregate(Avg('promedio'))['promedio__avg']
+def create_user(create=False):
+    if create:
+        User.objects.create_user(username='poo', password='1234', email='')
 
-# ------------------------------------------------------------------------------
-# ACTUALIZACIONES
-# ------------------------------------------------------------------------------
+def insertar_periodos(user):
+    periodos = [
+        Periodo(user=user, nombre='Periodo 1', fecha_inicio=date(2023, 1, 1), fecha_fin=date(2023, 6, 30), año=2023),
+        Periodo(user=user, nombre='Periodo 2', fecha_inicio=date(2023, 7, 1), fecha_fin=date(2023, 12, 31), año=2023),
+        Periodo(user=user, nombre= 'Periodo 3', fecha_inicio=date(2024, 1, 1), fecha_fin=date(2024, 6, 30), año=2024),
+        Periodo(user=user, nombre='Periodo 4', fecha_inicio=date(2024, 7, 1), fecha_fin=date(2024, 12, 31), año=2024),
+        Periodo(user=user, nombre='Periodo 5', fecha_inicio=date(2025, 1, 1), fecha_fin=date(2025, 6, 30), año=2025),
+        Periodo(user=user, nombre='Periodo 6', fecha_inicio=date(2025, 7, 1), fecha_fin=date(2025, 12, 31), año=2025),
+        Periodo(user=user, nombre='Periodo 7', fecha_inicio=date(2026, 1, 1), fecha_fin=date(2026, 6, 30), año=2026),
+        Periodo(user=user, nombre='Periodo 8', fecha_inicio=date(2026, 7, 1), fecha_fin=date(2026, 12, 31), año=2026),
+        Periodo(user=user, nombre='Periodo 9', fecha_inicio=date(2027, 1, 1), fecha_fin=date(2027, 6, 30), año=2027),
+        Periodo(user=user, nombre='Periodo 10', fecha_inicio=date(2027, 7, 1), fecha_fin=date(2027, 12, 31), año=2027),
+    ]
+    Periodo.objects.bulk_create(periodos)
+    print(f'Se han creado {len(periodos)} periodos académicos.')
 
-def actualizar_nota1_menor_20():
-    return Nota.objects.filter(nota1__lt=20).update(nota1=20)
+def insertar_asignaturas(user):
+    asignaturas = [
+        Asignatura(user=user, nombre='Matemáticas', descripcion='Curso de matemáticas', creditos=4),
+        Asignatura(user=user, nombre='Física', descripcion='Curso de física', creditos=3),
+        Asignatura(user=user, nombre='Programación', descripcion='Curso de programación', creditos=5),
+        Asignatura(user=user, nombre='Literatura', descripcion='Curso de literatura', creditos=3),
+        Asignatura(user=user, nombre='Historia', descripcion='Curso de historia', creditos=3),
+        Asignatura(user=user, nombre='Biología', descripcion='Curso de biología', creditos=4),
+        Asignatura(user=user, nombre='Química', descripcion='Curso de química', creditos=4),
+        Asignatura(user=user, nombre='Geografía', descripcion='Curso de geografía', creditos=3),
+        Asignatura(user=user, nombre='Arte', descripcion='Curso de arte', creditos=3),
+        Asignatura(user=user, nombre='Música', descripcion='Curso de música', creditos=3),
+    ]
+    Asignatura.objects.bulk_create(asignaturas)
+    print(f'Se han creado {len(asignaturas)} asignaturas.')
 
-# ------------------------------------------------------------------------------
-# ELIMINACIONES
-# ------------------------------------------------------------------------------
+def insertar_profesores(user):
+    profesores = [
+        Profesor(user=user, nombre='Juan', apellido='Pérez', cedula='1234567890', titulo='Ing.', especialidad='Software'),
+        Profesor(user=user, nombre='María', apellido='González', cedula='0987654321', titulo='Dra.', especialidad='Matemáticas'),
+        Profesor(user=user, nombre='Ana', apellido='Martínez', cedula='1234509876', titulo='Lic.', especialidad='Física'),
+        Profesor(user=user, nombre='Luis', apellido='Ramírez', cedula='5432167890', titulo='Mg.', especialidad='Historia'),
+        Profesor(user=user, nombre='Carlos', apellido='Sánchez', cedula='0987654321', titulo='Dr.', especialidad='Biología'),
+        Profesor(user=user, nombre='Laura', apellido='Gómez', cedula='6789054321', titulo='Ing.', especialidad='Química'),
+        Profesor(user=user, nombre='Pedro', apellido='Castro', cedula='5432109876', titulo='Lic.', especialidad='Geografía'),
+        Profesor(user=user, nombre='Lucía', apellido='Herrera', cedula='0987654321', titulo='Mg.', especialidad='Arte'),
+        Profesor(user=user, nombre='Miguel', apellido='Ruiz', cedula='1234567890', titulo='Dr.', especialidad='Música'),
+        Profesor(user=user, nombre='Sofía', apellido='López', cedula='5678901234', titulo='Ing.', especialidad='Literatura'),
+    ]
+    Profesor.objects.bulk_create(profesores)
+    print(f'Se han creado {len(profesores)} profesores.')
 
-def eliminar_galleta_maria():
+def insertar_estudiantes(user):
+    estudiantes = [
+        Estudiante(user=user, nombre='Est 1', apellido='Apellido1', cedula='1234567891', fecha_nacimiento=date(2000, 1, 1), email='est1@example.com'),
+        Estudiante(user=user, nombre='Est 2', apellido='Apellido2', cedula='0987654322', fecha_nacimiento=date(2001, 2, 2), email='est2@example.com'),
+        Estudiante(user=user, nombre='Est 3', apellido='Apellido3', cedula='5432167893', fecha_nacimiento=date(2002, 3, 3), email='est3@example.com'),
+        Estudiante(user=user, nombre='Est 4', apellido='Apellido4', cedula='0987654324', fecha_nacimiento=date(2003, 4, 4), email='est4@example.com'),
+        Estudiante(user=user, nombre='Est 5', apellido='Apellido5', cedula='1234509875', fecha_nacimiento=date(2004, 5, 5), email='est5@example.com'),
+        Estudiante(user=user, nombre='Est 6', apellido='Apellido6', cedula='6789054326', fecha_nacimiento=date(2005, 6, 6), email='est6@example.com'),
+        Estudiante(user=user, nombre='Est 7', apellido='Apellido7', cedula='5432109877', fecha_nacimiento=date(2006, 7, 7), email='est7@example.com'),
+        Estudiante(user=user, nombre='Est 8', apellido='Apellido8', cedula='0987654328', fecha_nacimiento=date(2007, 8, 8), email='est8@example.com'),
+        Estudiante(user=user, nombre='Est 9', apellido='Apellido9', cedula='1234567899', fecha_nacimiento=date(2008, 9, 9), email='est9@example.com'),
+        Estudiante(user=user, nombre='Est 10', apellido='Apellido10', cedula='5678901230', fecha_nacimiento=date(2009, 10, 10), email='est10@example.com'),
+    ]
+    Estudiante.objects.bulk_create(estudiantes)
+    print(f'Se han creado {len(estudiantes)} estudiantes.')
+
+def insertar_notas(user, estudiantes, periodos, asignaturas, profesores):
+    notas = []
+    for periodo in periodos:
+        for asignatura in asignaturas:
+            profesor = random.choice(profesores)
+            nota = Nota.objects.create(
+                user=user,
+                periodo=periodo,
+                asignatura=asignatura,
+                profesor=profesor
+            )
+            for estudiante in estudiantes:
+                DetalleNota.objects.create(
+                    user=user,
+                    nota=nota,
+                    estudiante=estudiante,
+                    descripcion=random.choice(['Examen', 'Tarea', 'Proyecto']),
+                    porcentaje=random.randint(10, 50),
+                )
+            notas.append(nota)
+    print(f'Se han creado {len(notas)} notas y sus detalles.')
+
+# Consultas (según el caso de estudio)
+def consultas_orm():
+    # Consulta 1: Estudiantes cuyo nombre empieza con 'Est'
+    estudiantes_est = Estudiante.objects.filter(nombre__startswith='Est')
+    print("Estudiantes cuyo nombre empieza con 'Est':", estudiantes_est)
+
+    # Consulta 2: Profesores cuyo nombre contiene 'or'
+    profesores_or = Profesor.objects.filter(nombre__icontains='or')
+    print("Profesores cuyo nombre contiene 'or':", profesores_or)
+
+    # Consulta 3: Asignaturas cuya descripción termina en 'a'
+    asignaturas_a = Asignatura.objects.filter(descripcion__endswith='a')
+    print("Asignaturas cuya descripción termina en 'a':", asignaturas_a)
+
+    # Consulta 4: Notas con nota1 mayor que 8.0
+    notas_mayores_8 = DetalleNota.objects.filter(nota1__gt=8.0)
+    print("Notas con nota1 mayor que 8.0:", notas_mayores_8)
+
+    # Consulta 5: Notas con nota2 menor que 9.0
+    notas_menores_9 = DetalleNota.objects.filter(nota2__lt=9.0)
+    print("Notas con nota2 menor que 9.0:", notas_menores_9)
+
+    # Consulta 6: Notas con recuperación igual a 9.5
+    notas_recuperacion_9_5 = DetalleNota.objects.filter(recuperacion=9.5)
+    print("Notas con recuperación igual a 9.5:", notas_recuperacion_9_5)
+
+    # Consulta 7: Estudiantes cuyo nombre empieza con 'Est' y su cédula termina en '1'
+    estudiantes_est_cedula_1 = Estudiante.objects.filter(nombre__startswith='Est', cedula__endswith='1')
+    print("Estudiantes cuyo nombre empieza con 'Est' y su cédula termina en '1':", estudiantes_est_cedula_1)
+
+    # Consulta 8: Asignaturas cuya descripción contiene 'Curso' o termina en 'a'
+    asignaturas_curso_o_a = Asignatura.objects.filter(Q(descripcion__icontains='Curso') | Q(descripcion__endswith='a'))
+    print("Asignaturas cuya descripción contiene 'Curso' o termina en 'a':", asignaturas_curso_o_a)
+
+    # Consulta 9: Profesores cuyo nombre no contiene 'or'
+    profesores_no_or = Profesor.objects.filter(~Q(nombre__icontains='or'))
+    print("Profesores cuyo nombre no contiene 'or':", profesores_no_or)
+
+    # Consulta 10: Notas con nota1 mayor que 7.0 y nota2 menor que 8.0
+    notas_7_8 = DetalleNota.objects.filter(nota1__gt=7.0, nota2__lt=8.0)
+    print("Notas con nota1 mayor que 7.0 y nota2 menor que 8.0:", notas_7_8)
+
+    # Consulta 11: Notas con recuperación igual a None o nota2 mayor que 9.0
+    notas_recuperacion_none_o_nota2_mayor_9 = DetalleNota.objects.filter(Q(recuperacion__isnull=True) | Q(nota2__gt=9.0))
+    print("Notas con recuperación igual a None o nota2 mayor que 9.0:", notas_recuperacion_none_o_nota2_mayor_9)
+
+    # Consulta 12: Notas con nota1 entre 7.0 y 9.0
+    notas_nota1_entre_7_y_9 = DetalleNota.objects.filter(nota1__range=(7.0, 9.0))
+    print("Notas con nota1 entre 7.0 y 9.0:", notas_nota1_entre_7_y_9)
+
+    # Consulta 13: Notas con nota2 fuera del rango 6.0 a 8.0
+    notas_nota2_fuera_de_rango_6_8 = DetalleNota.objects.exclude(nota2__range=(6.0, 8.0))
+    print("Notas con nota2 fuera del rango 6.0 a 8.0:", notas_nota2_fuera_de_rango_6_8)
+
+    # Consulta 14: Notas cuya recuperación no sea None
+    notas_recuperacion_no_null = DetalleNota.objects.filter(recuperacion__isnull=False)
+    print("Notas cuya recuperación no sea None:", notas_recuperacion_no_null)
+
+    # Consulta 15: Notas creadas en el último año
+    hace_un_anio = timezone.now() - timedelta(days=365)
+    notas_ultimo_anio = DetalleNota.objects.filter(created__gte=hace_un_anio)
+    print("Notas creadas en el último año:", notas_ultimo_anio)
+
+    # Consulta 16: Notas creadas en el último mes
+    hace_un_mes = timezone.now() - timedelta(days=30)
+    notas_ultimo_mes = DetalleNota.objects.filter(created__gte=hace_un_mes)
+    print("Notas creadas en el último mes:", notas_ultimo_mes)
+
+    # Consulta 17: Notas creadas en el último día
+    hace_un_dia = timezone.now() - timedelta(days=1)
+    notas_ultimo_dia = DetalleNota.objects.filter(created__gte=hace_un_dia)
+    print("Notas creadas en el último día:", notas_ultimo_dia)
+
+    # Consulta 18: Notas creadas antes del año 2023
+    notas_antes_2023 = DetalleNota.objects.filter(created__year__lt=2023)
+    print("Notas creadas antes del año 2023:", notas_antes_2023)
+
+    # Consulta 19: Notas creadas en marzo de cualquier año
+    notas_marzo = DetalleNota.objects.filter(created__month=3)
+    print("Notas creadas en marzo de cualquier año:", notas_marzo)
+
+    # Consulta 20: Estudiantes cuyo nombre tiene exactamente 10 caracteres
+    estudiantes_10_caracteres = Estudiante.objects.filter(nombre__exact=10)
+    print("Estudiantes cuyo nombre tiene exactamente 10 caracteres:", estudiantes_10_caracteres)
+
+    # Consulta 21: Notas con nota1 y nota2 mayores a 7.5
+    notas_mayores_7_5 = DetalleNota.objects.filter(nota1__gt=7.5, nota2__gt=7.5)
+    print("Notas con nota1 y nota2 mayores a 7.5:", notas_mayores_7_5)
+
+    # Consulta 22: Notas con recuperación no nula y nota1 mayor a nota2
+    notas_recuperacion_y_nota1_mayor_nota2 = DetalleNota.objects.filter(recuperacion__isnull=False, nota1__gt=F('nota2'))
+    print("Notas con recuperación no nula y nota1 mayor a nota2:", notas_recuperacion_y_nota1_mayor_nota2)
+
+    # Consulta 23: Notas con nota1 mayor a 8.0 o nota2 igual a 7.5
+    notas_nota1_mayor_8_o_nota2_igual_7_5 = DetalleNota.objects.filter(Q(nota1__gt=8.0) | Q(nota2=7.5))
+    print("Notas con nota1 mayor a 8.0 o nota2 igual a 7.5:", notas_nota1_mayor_8_o_nota2_igual_7_5)
+
+    # Consulta 24: Notas con recuperación mayor a nota1 y nota2 (corregida)
+    notas_recuperacion_mayor_nota1_y_nota2 = DetalleNota.objects.filter(
+        recuperacion__gt=F('nota1') & Q(recuperacion__gt=F('nota2'))
+    )
+    print("Notas con recuperación mayor a nota1 y nota2:", notas_recuperacion_mayor_nota1_y_nota2)
+
+    # Consulta 25: Estudiantes con al menos una nota de recuperación
+    estudiantes_con_recuperacion = Estudiante.objects.filter(detallenota__recuperacion__isnull=False).distinct()
+    print("Estudiantes con al menos una nota de recuperación:", estudiantes_con_recuperacion)
+
+    # Consulta 26: Profesores que han dado una asignatura específica (por ejemplo, 'Matemáticas')
+    asignatura_especifica = Asignatura.objects.get(descripcion='Matemáticas')
+    profesores_asignatura_especifica = Profesor.objects.filter(nota__asignatura=asignatura_especifica).distinct()
+    print("Profesores que han dado 'Matemáticas':", profesores_asignatura_especifica)
+
+    # Consulta 27: Asignaturas que tienen al menos una nota registrada
+    asignaturas_con_notas = Asignatura.objects.filter(nota__isnull=False).distinct()
+    print("Asignaturas que tienen al menos una nota registrada:", asignaturas_con_notas)
+
+    # Consulta 28: Asignaturas que no tienen notas registradas
+    asignaturas_sin_notas = Asignatura.objects.filter(nota__isnull=True)
+    print("Asignaturas que no tienen notas registradas:", asignaturas_sin_notas)
+
+    # Consulta 29: Estudiantes que no tienen notas de recuperación
+    estudiantes_sin_recuperacion = Estudiante.objects.filter(detallenota__recuperacion__isnull=True).distinct()
+    print("Estudiantes que no tienen notas de recuperación:", estudiantes_sin_recuperacion)
+
+    # Consulta 30: Promedio de nota1 y nota2 de cada nota
+    promedio_notas = DetalleNota.objects.annotate(promedio=(F('nota1') + F('nota2')) / 2)
+    print("Promedio de nota1 y nota2 de cada nota:")
+    for detalle_nota in promedio_notas:
+        print(f"- {detalle_nota}: {detalle_nota.promedio}")
+
+    # Consulta 31: Notas con nota1 menor que 6.0 y nota2 mayor que 7.0
+    notas_nota1_menor_6_nota2_mayor_7 = DetalleNota.objects.filter(nota1__lt=6.0, nota2__gt=7.0)
+    print("Notas con nota1 menor que 6.0 y nota2 mayor que 7.0:", notas_nota1_menor_6_nota2_mayor_7)
+
+    # Consulta 32: Notas con nota1 en la lista [7.0, 8.0, 9.0]
+    notas_nota1_en_lista = DetalleNota.objects.filter(nota1__in=[7.0, 8.0, 9.0])
+    print("Notas con nota1 en la lista [7.0, 8.0, 9.0]:", notas_nota1_en_lista)
+
+    # Consulta 33: Notas cuyo id está en un rango del 1 al 5
+    notas_rango_id = DetalleNota.objects.filter(id__range=(1, 5))
+    print("Notas cuyo id está en un rango del 1 al 5:", notas_rango_id)
+
+    # Consulta 34: Notas cuyo recuperacion no está en la lista [8.0, 9.0, 10.0]
+    notas_recuperacion_no_en_lista = DetalleNota.objects.exclude(recuperacion__in=[8.0, 9.0, 10.0])
+    print("Notas cuyo recuperacion no está en la lista [8.0, 9.0, 10.0]:", notas_recuperacion_no_en_lista)
+
+    # Consulta 35: Suma de todas las notas de un estudiante
+    suma_notas_estudiante = DetalleNota.objects.filter(estudiante_id=estudiante_id).aggregate(suma_notas=Sum('nota1'))['suma_notas']
+    print(f"Suma de todas las notas del estudiante con ID {estudiante_id}: {suma_notas_estudiante}")
+
+    # Consulta 36: Nota máxima obtenida por un estudiante
+    nota_maxima_estudiante = DetalleNota.objects.filter(estudiante_id=estudiante_id).aggregate(Max('nota1'))['nota1__max']
+    print(f"Nota máxima obtenida por el estudiante con ID {estudiante_id}: {nota_maxima_estudiante}")
+
+    # Consulta 37: Nota mínima obtenida por un estudiante
+    nota_minima_estudiante = DetalleNota.objects.filter(estudiante_id=estudiante_id).aggregate(Min('nota1'))['nota1__min']
+    print(f"Nota mínima obtenida por el estudiante con ID {estudiante_id}: {nota_minima_estudiante}")
+
+    # Consulta 38: Contar el número total de notas de un estudiante
+    total_notas_estudiante = DetalleNota.objects.filter(estudiante_id=estudiante_id).count()
+    print(f"Número total de notas del estudiante con ID {estudiante_id}: {total_notas_estudiante}")
+
+    # Consulta 39: Promedio de todas las notas de un estudiante sin incluir recuperación
+    promedio_sin_recuperacion = DetalleNota.objects.filter(estudiante_id=estudiante_id).exclude(recuperacion__isnull=False).aggregate(Avg('nota1'))['nota1__avg']
+    print(f"Promedio de notas del estudiante con ID {estudiante_id} (sin recuperación): {promedio_sin_recuperacion}")
+
+    # Consulta 40: Obtener todas las notas de un estudiante con el detalle de todos sus datos relacionados
+    notas_estudiante_detalle = Nota.objects.filter(estudiante=estudiante_id).prefetch_related('detallenota_set')
+    print(f"Notas del estudiante con ID {estudiante_id} y sus detalles:")
+    for nota in notas_estudiante_detalle:
+        print(f"- {nota}:")
+        for detalle in nota.detallenota_set.all():
+            print(f"  - {detalle}")
+
+    # Consulta 41: Obtener todas las notas de un período específico
+    notas_periodo_especifico = Nota.objects.filter(periodo=periodo_especifico)
+    print(f"Notas del período '{periodo_especifico}':", notas_periodo_especifico)
+
+    # Consulta 42: Consultar todas las notas de una asignatura dada en un período
+    notas_asignatura_periodo = Nota.objects.filter(asignatura=asignatura_especifica, periodo=periodo_especifico)
+    print(f"Notas de '{asignatura_especifica}' en el periodo '{periodo_especifico}':", notas_asignatura_periodo)
+
+    # Consulta 43: Obtener todas las notas de un profesor en particular
+    notas_profesor = Nota.objects.filter(profesor=profesor_especifico)
+    print(f"Notas del profesor '{profesor_especifico.nombre} {profesor_especifico.apellido}':", notas_profesor)
+
+    # Consulta 44: Consultar todas las notas de un estudiante con notas superiores a un valor dado
+    notas_estudiante_altas = DetalleNota.objects.filter(estudiante_id=estudiante_id, nota1__gt=15.0).select_related('nota')
+    print(f"Notas del estudiante con ID {estudiante_id} superiores a 15.0:")
+    for detalle_nota in notas_estudiante_altas:
+        print(f"- {detalle_nota.nota}: {detalle_nota.nota1}")
+
+    # Consulta 45: Obtener todas las notas de un estudiante ordenadas por período
+    notas_estudiante_ordenadas = DetalleNota.objects.filter(estudiante_id=estudiante_id).order_by('nota__periodo__periodo').select_related('nota', 'nota__periodo')
+    print(f"Notas del estudiante con ID {estudiante_id} ordenadas por periodo:")
+    for detalle_nota in notas_estudiante_ordenadas:
+        print(f"- {detalle_nota.nota.periodo}: {detalle_nota.nota} - Nota 1: {detalle_nota.nota1}")
+
+    # Consulta 46: Consultar la cantidad total de notas para un estudiante
+    total_notas_estudiante = DetalleNota.objects.filter(estudiante_id=estudiante_id).count()
+    print(f"Total de notas del estudiante con ID {estudiante_id}: {total_notas_estudiante}")
+
+    # Consulta 47: Calcular el promedio de las notas de un estudiante en un período dado
+    promedio_notas_estudiante_periodo = DetalleNota.objects.filter(
+        estudiante_id=estudiante_id, nota__periodo=periodo_especifico
+    ).aggregate(Avg('nota1'))['nota1__avg']
+    if promedio_notas_estudiante_periodo is not None:
+        print(
+            f"Promedio de notas del estudiante con ID {estudiante_id} en el periodo '{periodo_especifico}': {promedio_notas_estudiante_periodo}"
+        )
+    else:
+        print(
+            f"El estudiante con ID {estudiante_id} no tiene notas en el periodo '{periodo_especifico}'."
+        )
+
+    # Consulta 48: Consultar todas las notas con una observación específica (por ejemplo, 'Reprobado')
+    notas_observacion_especifica = DetalleNota.objects.filter(observacion='Reprobado')
+    print("Notas con observación 'Reprobado':", notas_observacion_especifica)
+
+    # Consulta 49: Obtener todas las notas de un estudiante ordenadas por asignatura
+    notas_estudiante_ordenadas_asignatura = DetalleNota.objects.filter(estudiante_id=estudiante_id).order_by('nota__asignatura__descripcion').select_related('nota', 'nota__asignatura')
+    print(f"Notas del estudiante con ID {estudiante_id} ordenadas por asignatura:")
+    for detalle_nota in notas_estudiante_ordenadas_asignatura:
+        print(f"- {detalle_nota.nota.asignatura}: {detalle_nota.nota} - Nota 1: {detalle_nota.nota1}")
+
+    # Operación 50: Actualizar nota1 para alumnos con nota1 < 20
+    DetalleNota.objects.filter(nota1__lt=20).update(nota1=20)
+
+    # Operación 51: Actualizar nota2 para alumnos con nota2 < 15
+    DetalleNota.objects.filter(nota2__lt=15).update(nota2=15)
+
+    # Operación 52: Actualizar recuperación para alumnos con recuperación < 10
+    DetalleNota.objects.filter(recuperacion__lt=10).update(recuperacion=10)
+
+    # Operación 53: Actualizar observación para alumnos que hayan aprobado
+    DetalleNota.objects.filter(nota1__gte=10, nota2__gte=10).update(observacion='Aprobado')
+
+    # Operación 54: Actualizar todas las notas en un período específico
+    notas_periodo_especifico = Nota.objects.filter(periodo=periodo_especifico)
+    for nota in notas_periodo_especifico:
+        DetalleNota.objects.filter(nota=nota).update(nota1=F('nota1') + 1)  # Ejemplo: aumentar nota1 en 1 punto
+
+    # Operación 55: Eliminar físicamente todas las notas de un estudiante
+    DetalleNota.objects.filter(estudiante_id=estudiante_id).hard_delete()
+
+    # Operación 56: Eliminar lógicamente todas las notas de un estudiante
+    DetalleNota.objects.filter(estudiante_id=estudiante_id).delete()
+
+    # Operación 57: Eliminar físicamente todas las notas de un período específico
+    DetalleNota.objects.filter(nota__periodo=periodo_especifico).hard_delete()
+
+    # Operación 58: Eliminar lógicamente todas las notas de un período específico
+    DetalleNota.objects.filter(nota__periodo=periodo_especifico).delete()
+
+    # Operación 59: Eliminar físicamente todas las notas que tengan una nota1 menor a 10
+    DetalleNota.objects.filter(nota1__lt=10).hard_delete()
+
+    # Consulta 60: Crear un registro de notas de un estudiante (similar a la creación de una factura)
     try:
-        brand = Brand.objects.get(description='Galleta Maria')
-        brand.delete()
-        return True
-    except Brand.DoesNotExist:
-        return False
+        estudiante = Estudiante.objects.get(id=1)  # Supongamos que el estudiante tiene ID 1
+        periodo = Periodo.objects.get(id=1)  # Supongamos que el periodo tiene ID 1
+        asignaturas = Asignatura.objects.all()  # Obtener todas las asignaturas
+        profesores = Profesor.objects.all()  # Obtener todos los profesores
 
-# ------------------------------------------------------------------------------
-# EJECUCIÓN
-# ------------------------------------------------------------------------------
+        nueva_nota = Nota.objects.create(
+            periodo=periodo,
+            estudiante=estudiante,
+            user=user
+        )
 
+        detalles_notas = []
+        for asignatura in asignaturas:
+            profesor = random.choice(profesores)  # Asignar un profesor aleatorio a cada asignatura
+            detalle = DetalleNota(
+                nota=nueva_nota,
+                asignatura=asignatura,
+                profesor=profesor,
+                porcentaje=random.randint(10, 50),
+                user=user
+            )
+            detalles_notas.append(detalle)
+
+        DetalleNota.objects.bulk_create(detalles_notas)
+        print("Registro de notas creado exitosamente.")
+    except ObjectDoesNotExist:
+        print("Error: No se pudo encontrar el estudiante, periodo, asignatura o profesor.")
+
+
+# Ejecutar inserciones y consultas
 if __name__ == '__main__':
-    # Llama a las funciones que deseas probar aquí
-    print(estudiantes_empiezan_con_Est())
-    print(profesores_contienen_or())
-    print(asignaturas_terminan_en_10())
-    print(estudiantes_empiezan_con_Est_terminan_en_1())
-    print(asignaturas_contienen_Asig_o_terminan_en_5())
-    print(profesores_no_contienen_or())
-    print(notas_entre_7_y_9())
-    print(notas_no_entre_6_y_8())
-    print(notas_ultimo_año())
-    print(estudiantes_nombre_10_caracteres())
-    print(notas_ambas_mayores_a_7_5())
-    print(estudiantes_con_recuperacion())
-    print(profesores_de_matematicas_1())
-    print(asignaturas_con_notas())
-    print(notas_de_estudiante('2000000001'))
-    print(notas_de_periodo('Periodo 1-2023'))
-    print(suma_notas_estudiante('2000000001'))
-    print(nota_maxima_estudiante('2000000001'))
-    print(nota_minima_estudiante('2000000001'))
-    print(promedio_notas_estudiante('2000000001'))
-    print(actualizar_nota1_menor_20())
-    print(eliminar_galleta_maria())
+    create_user(create=True)  # Crear usuario solo si no existe
+    user = User.objects.get(username='poo')  # Obtener el usuario creado
+    insertar_periodos(user)
+    insertar_asignaturas(user)
+    insertar_profesores(user)
+    insertar_estudiantes(user)
+    insertar_notas(user, Estudiante.objects.all(), Periodo.objects.all(), Asignatura.objects.all(),
+                   Profesor.objects.all())
+    consultas_orm()
+
