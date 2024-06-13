@@ -96,4 +96,6 @@ La idea principal es crear una herramienta que facilite la administración de lo
 
 ---
 **¡Esperamos que este sistema te sea de gran utilidad!** 😊
+**¡Esperamos que este sistema te sea de gran utilidad!** 😊
+**¡Esperamos que este sistema te sea de gran utilidad!** 😊
 
