@@ -38,7 +38,7 @@ class Asignatura(models.Model):
 class Profesor(models.Model):
     nombre = models.CharField(max_length=100)
     apellido = models.CharField(max_length=100)
-    cedula = models.CharField(max_length=15, unique=True)
+    cedula = models.CharField(max_length=15, unique=False)
     titulo = models.CharField(max_length=50)  # Título académico (Lic., Mg., Dr., etc.)
     especialidad = models.CharField(max_length=100)
     user = models.ForeignKey('auth.User', on_delete=models.CASCADE)
