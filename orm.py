@@ -20,9 +20,9 @@ django.setup()
 
 from django.contrib.auth.models import User
 
-def create_user(create=False):
+def create_user(create=True):
     if create:
-        User.objects.create_user(username='poo', password='1234', email='')
+        User.objects.create_user(username='Frank_', password='1234', email='frankBorja@gmail.com')
 
 def insertar_periodos(user):
     periodos = [
@@ -514,7 +514,7 @@ def consulta_60(user, user_id=None):
 # Ejecutar inserciones y consultas
 if __name__ == '__main__':
     create_user()  # Crear usuario solo si no existe
-    user = User.objects.get(username='poo')  # Obtener el usuario creado
+    user = User.objects.get(username='Frank_')  # Obtener el usuario creado
     insertar_periodos(user)
     insertar_asignaturas(user)
     insertar_profesores(user)
