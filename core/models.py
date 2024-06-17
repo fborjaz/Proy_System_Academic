@@ -18,6 +18,15 @@ class Periodo(models.Model):
         self.state = False
         self.save()
 
+    def clean(self):
+        # Validar que la fecha de inicio sea anterior a la fecha de fin
+        if self.fecha_inicio >= self.fecha_fin:
+            raise ValidationError("La fecha de inicio debe ser anterior a la fecha de fin.")
+
+        # Validar que el año coincida con las fechas
+        if self.fecha_inicio.year != self.año or self.fecha_fin.year != self.año:
+            raise ValidationError("El año debe coincidir con el año de las fechas de inicio y fin.")
+
 class Asignatura(models.Model):
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField()
@@ -95,11 +104,32 @@ class Nota(models.Model):
         self.state = False
         self.save()
 
+    def clean(self):
+        # Validar que las notas estén dentro del rango 0-20
+        if self.nota1 < 0 or self.nota1 > 20:
+            raise ValidationError("La nota1 debe estar entre 0 y 20.")
+        if self.nota2 < 0 or self.nota2 > 20:
+            raise ValidationError("La nota2 debe estar entre 0 y 20.")
+        if self.recuperacion and (self.recuperacion < 0 or self.recuperacion > 20):
+            raise ValidationError("La recuperación debe estar entre 0 y 20.")
+
+        # Validar que el estado sea 'Aprobado' o 'Reprobado'
+        estados_validos = ['Aprobado', 'Reprobado']
+        if self.estado not in estados_validos:
+            raise ValidationError(f"El estado debe ser uno de los siguientes: {', '.join(estados_validos)}")
+
+    def save(self, *args, **kwargs):
+        if self.nota1 and self.nota2:
+            self.promedio = (self.nota1 + self.nota2) / 2
+        else:
+            self.promedio = None
+        super().save(*args, **kwargs)
+
 class DetalleNota(models.Model):
     nota = models.ForeignKey(Nota, on_delete=models.CASCADE)
-    descripcion = models.CharField(max_length=100)  # Descripción del detalle (Examen, Tarea, etc.)
-    porcentaje = models.DecimalField(max_digits=5, decimal_places=2)  # Porcentaje que representa en la nota final
-    user = models.ForeignKey('auth.User', on_delete=models.CASCADE)
+    descripcion = models.CharField(max_length=100)
+    porcentaje = models.DecimalField(max_digits=5, decimal_places=2)
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE)  # Corregido: un solo campo 'user'
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
     state = models.BooleanField(default=True)
