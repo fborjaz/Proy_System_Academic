@@ -1,0 +1,12 @@
+Pasos para ejecutar el ORM
+1. Copiar todo menos los llamados a las funciones de la base de datos
+2. Importar lo de autoloader.user y llamar al usuario
+from django.contrib.auth.models import User
+user = User.objects.get(username='Frank_')
+3. De no existir el usuario, crearlo
+from django.contrib.auth.models import User
+# Crea un nuevo usuario (ajusta los valores según tus necesidades)
+user = User.objects.create_user(username='nuevo_usuario', password='contraseña_segura', email='correo@ejemplo.com')
+# Guarda el usuario en la base de datos
+user.save()
+4. Llamar a las funciones de la base de datos.

@@ -23,6 +23,9 @@ from django.contrib.auth.models import User
 def create_user(create=True):
     if create:
         User.objects.create_user(username='Frank_', password='1234', email='frankBorja@gmail.com')
+        print("Usuario creado.")
+    else:
+        print("No se creó el usuario.")
 
 def insertar_periodos(user):
     periodos = [
@@ -472,40 +475,67 @@ def operacion_59(user_id=None):
 # Sentencias CRUD:
 def consulta_60(user, user_id=None):
     try:
-        estudiante = Estudiante.objects.get(id=1, user_id=user_id)
-        periodo = Periodo.objects.get(id=1, user_id=user_id)
-        asignaturas = Asignatura.objects.filter(user_id=user_id)
-        profesores = Profesor.objects.filter(user_id=user_id)
+        with transaction.atomic():
+            estudiante = Estudiante.objects.get(id=1, user_id=user_id)
+            periodo = Periodo.objects.get(id=1, user_id=user_id)
+            asignaturas = Asignatura.objects.filter(user_id=user_id).prefetch_related('profesores')
 
-        nueva_nota = Nota.objects.create(
-            periodo=periodo,
-            estudiante=estudiante,
-            user=user
-        )
-
-        detalles_notas = []
-        for asignatura in asignaturas:
-            profesor = random.choice(profesores)
-            detalle = Detallenota(
-                nota=nueva_nota,
-                asignatura=asignatura,
-                profesor=profesor,
-                porcentaje=random.randint(10, 50),
-                user=user,
-                nota1=round(random.uniform(0, 20), 2),
-                nota2=round(random.uniform(0, 20), 2),
-                recuperacion=round(random.uniform(0, 20), 2) if random.random() < 0.3 else None
+            # Crear la nota sin promedio
+            nueva_nota = Nota.objects.create(
+                periodo=periodo,
+                estudiante=estudiante,
+                user=user
             )
-            detalles_notas.append(detalle)
 
-        DetalleNota.objects.bulk_create(detalles_notas)
+            detalles_notas = []
+            suma_ponderada_nota1 = 0
+            suma_ponderada_nota2 = 0
+            total_porcentaje = 0
 
-        print("\nConsulta 60: Registro de notas creado exitosamente.")
-        print(f"  - Estudiante: {estudiante.nombre} {estudiante.apellido}")
-        print(f"  - Periodo: {periodo.nombre}")
-        print("  - Notas:")
-        for detalle in detalles_notas:
-            print(f"    - Asignatura: {detalle.asignatura}, Nota 1: {detalle.nota1}, Nota 2: {detalle.nota2}, Recuperación: {detalle.recuperacion if detalle.recuperacion else 'No aplica'}")
+            # Crear y guardar los detalles de notas
+            for asignatura in asignaturas:
+                profesores = asignatura.profesores.all()
+                if not profesores:
+                    raise ValueError(f"No hay profesores asignados a la asignatura '{asignatura}'")
+                profesor = random.choice(profesores)
+
+                detalle = DetalleNota(
+                    nota=nueva_nota,
+                    asignatura=asignatura,
+                    profesor=profesor,
+                    porcentaje=random.randint(10, 50),
+                    user=user,
+                    nota1=round(random.uniform(0, 20), 2),
+                    nota2=round(random.uniform(0, 20), 2),
+                    recuperacion=round(random.uniform(0, 20), 2) if random.random() < 0.3 else None
+                )
+                detalle.save()
+                detalles_notas.append(detalle)
+
+                suma_ponderada_nota1 += detalle.nota1 * detalle.porcentaje
+                suma_ponderada_nota2 += detalle.nota2 * detalle.porcentaje
+                total_porcentaje += detalle.porcentaje
+
+            # Calcular y guardar el promedio (DESPUÉS de crear y guardar los detalles)
+            if total_porcentaje > 0:
+                nueva_nota.promedio = (suma_ponderada_nota1 + suma_ponderada_nota2) / (2 * total_porcentaje)
+                # Opcional: Actualizar el estado de la nota en función de si aprobó o no
+                nueva_nota.estado = "Aprobado" if nueva_nota.promedio >= 10 else "Reprobado"
+            else:
+                nueva_nota.promedio = None  # Si no hay detalles, el promedio será nulo
+                # Opcional: Si no hay notas, puedes asignar un estado como "Sin Calificar"
+                nueva_nota.estado = "Sin Calificar"
+            nueva_nota.save()
+
+            # Imprimir resultados
+            print("\nConsulta 60: Registro de notas creado exitosamente.")
+            print(f"  - Estudiante: {estudiante.nombre} {estudiante.apellido}")
+            print(f"  - Periodo: {periodo.nombre}")
+            print("  - Notas:")
+            for detalle in detalles_notas:
+                print(
+                    f"    - Asignatura: {detalle.asignatura}, Nota 1: {detalle.nota1}, Nota 2: {detalle.nota2}, Recuperación: {detalle.recuperacion if detalle.recuperacion else 'No aplica'}"
+                )
 
     except ObjectDoesNotExist:
         print("Error: No se pudo encontrar el estudiante, periodo, asignatura o profesor.")

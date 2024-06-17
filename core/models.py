@@ -84,7 +84,7 @@ class Estudiante(models.Model):  # Definición del modelo Estudiante
 class Nota(models.Model):
     periodo = models.ForeignKey(Periodo, on_delete=models.CASCADE)
     asignatura = models.ForeignKey(Asignatura, on_delete=models.CASCADE)
-    profesor = models.ForeignKey(Profesor, on_delete=models.CASCADE)
+    profesor = models.ForeignKey(Profesor, on_delete=models.CASCADE, related_name='notas')
     estudiante = models.ForeignKey('core.Estudiante', on_delete=models.CASCADE)
     nota1 = models.DecimalField(max_digits=4, decimal_places=2)
     nota2 = models.DecimalField(max_digits=4, decimal_places=2)
