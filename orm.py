@@ -5,11 +5,14 @@ from django.db import models
 from django.core.exceptions import ObjectDoesNotExist
 from datetime import date, datetime, timedelta
 from django.utils import timezone
-from django.db.models import Q, Avg, Count, F, Value, CharField
+from django.db.models import Q, Avg, Count, F, Value, CharField, Max, Min, Sum
 from django.http import Http404
 from django.db.models import FloatField
 from django.db.models.functions import Cast
 from django.shortcuts import get_object_or_404
+from core.models import Periodo, Asignatura, Profesor, Estudiante, Nota, DetalleNota
+from django.contrib.auth.models import User
+from django.db import IntegrityError, transaction
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'app_academy.settings')
 django.setup()
@@ -24,7 +27,7 @@ def insertar_periodos(user):
     periodos = [
         Periodo(user=user, nombre='Periodo 1', fecha_inicio=date(2023, 1, 1), fecha_fin=date(2023, 6, 30), año=2023),
         Periodo(user=user, nombre='Periodo 2', fecha_inicio=date(2023, 7, 1), fecha_fin=date(2023, 12, 31), año=2023),
-        Periodo(user=user, nombre= 'Periodo 3', fecha_inicio=date(2024, 1, 1), fecha_fin=date(2024, 6, 30), año=2024),
+        Periodo(user=user, nombre='Periodo 3', fecha_inicio=date(2024, 1, 1), fecha_fin=date(2024, 6, 30), año=2024),
         Periodo(user=user, nombre='Periodo 4', fecha_inicio=date(2024, 7, 1), fecha_fin=date(2024, 12, 31), año=2024),
         Periodo(user=user, nombre='Periodo 5', fecha_inicio=date(2025, 1, 1), fecha_fin=date(2025, 6, 30), año=2025),
         Periodo(user=user, nombre='Periodo 6', fecha_inicio=date(2025, 7, 1), fecha_fin=date(2025, 12, 31), año=2025),
@@ -54,16 +57,16 @@ def insertar_asignaturas(user):
 
 def insertar_profesores(user):
     profesores = [
-        Profesor(user=user, nombre='Juan', apellido='Pérez', cedula='1234567890', titulo='Ing.', especialidad='Software'),
-        Profesor(user=user, nombre='María', apellido='González', cedula='0987654321', titulo='Dra.', especialidad='Matemáticas'),
-        Profesor(user=user, nombre='Ana', apellido='Martínez', cedula='1234509876', titulo='Lic.', especialidad='Física'),
-        Profesor(user=user, nombre='Luis', apellido='Ramírez', cedula='5432167890', titulo='Mg.', especialidad='Historia'),
-        Profesor(user=user, nombre='Carlos', apellido='Sánchez', cedula='0987654321', titulo='Dr.', especialidad='Biología'),
-        Profesor(user=user, nombre='Laura', apellido='Gómez', cedula='6789054321', titulo='Ing.', especialidad='Química'),
-        Profesor(user=user, nombre='Pedro', apellido='Castro', cedula='5432109876', titulo='Lic.', especialidad='Geografía'),
-        Profesor(user=user, nombre='Lucía', apellido='Herrera', cedula='0987654321', titulo='Mg.', especialidad='Arte'),
-        Profesor(user=user, nombre='Miguel', apellido='Ruiz', cedula='1234567890', titulo='Dr.', especialidad='Música'),
-        Profesor(user=user, nombre='Sofía', apellido='López', cedula='5678901234', titulo='Ing.', especialidad='Literatura'),
+        Profesor(user=user, nombre='Juan', apellido='Pérez', cedula='6758901234', titulo='Ing.', especialidad='Software'),
+        Profesor(user=user, nombre='María', apellido='González', cedula='2987654321', titulo='Dra.', especialidad='Matemáticas'),
+        Profesor(user=user, nombre='Ana', apellido='Martínez', cedula='9012345678', titulo='Lic.', especialidad='Física'),
+        Profesor(user=user, nombre='Luis', apellido='Ramírez', cedula='5554443332', titulo='Mg.', especialidad='Historia'),
+        Profesor(user=user, nombre='Carlos', apellido='Sánchez', cedula='1112223334', titulo='Dr.', especialidad='Biología'),
+        Profesor(user=user, nombre='Laura', apellido='Gómez', cedula='7778889990', titulo='Ing.', especialidad='Química'),
+        Profesor(user=user, nombre='Pedro', apellido='Castro', cedula='4321098765', titulo='Lic.', especialidad='Geografía'),
+        Profesor(user=user, nombre='Lucía', apellido='Herrera', cedula='8887776665', titulo='Mg.', especialidad='Arte'),
+        Profesor(user=user, nombre='Miguel', apellido='Ruiz', cedula='3141592653', titulo='Dr.', especialidad='Música'),
+        Profesor(user=user, nombre='Sofía', apellido='López', cedula='5820852941', titulo='Ing.', especialidad='Literatura'),
     ]
     try:
         Profesor.objects.bulk_create(profesores)
@@ -261,7 +264,7 @@ def consultas_orm(user_id=None):
     for nota in promedio_notas:
         print(f"- {nota}: {nota.promedio_notas}")
 
-        # Consulta 31: Notas con nota1 menor que 6.0 y nota2 mayor que 7.0
+    # Consulta 31: Notas con nota1 menor que 6.0 y nota2 mayor que 7.0
     notas_nota1_menor_6_nota2_mayor_7 = Nota.objects.filter(nota1__lt=6.0, nota2__gt=7.0, user_id=user_id)
     print("Notas con nota1 menor que 6.0 y nota2 mayor que 7.0:", notas_nota1_menor_6_nota2_mayor_7)
 
@@ -302,15 +305,9 @@ def consultas_orm(user_id=None):
         'nota1__min']
     print(f"Nota mínima obtenida por el estudiante con ID {estudiante_id}: {nota_minima_estudiante}")
 
-    # Consulta 30: Promedio de nota1 y nota2 de cada nota (corregida)
-    from django.db.models import FloatField
-    from django.db.models.functions import Cast
-    promedio_notas = Nota.objects.filter(user_id=user_id).annotate(
-        promedio=Cast(F('nota1') + F('nota2'), FloatField()) / 2
-    )
-    print("Promedio de nota1 y nota2 de cada nota:")
-    for nota in promedio_notas:
-        print(f"- {nota}: {nota.promedio}")
+    # Consulta 38: Contar el número total de notas de un estudiante
+    total_notas_estudiante = Nota.objects.filter(estudiante_id=estudiante_id, user_id=user_id).count()
+    print(f"Número total de notas del estudiante con ID {estudiante_id}: {total_notas_estudiante}")
 
     # Consulta 39: Promedio de todas las notas de un estudiante sin incluir recuperación
     promedio_sin_recuperacion = \
@@ -339,7 +336,7 @@ def consultas_orm(user_id=None):
     print(f"Notas de '{asignatura_especifica}' en el periodo '{periodo_especifico}':", notas_asignatura_periodo)
 
     # Consulta 43: Obtener todas las notas de un profesor en particular
-    profesor_especifico = Profesor.objects.get(cedula='0927454326',
+    profesor_especifico = Profesor.objects.get(cedula='9012345678',
                                                user_id=user_id)  # Reemplazar con la cédula del profesor que deseas consultar
     notas_profesor = Nota.objects.filter(profesor=profesor_especifico, user_id=user_id)
     print(f"Notas del profesor '{profesor_especifico.nombre} {profesor_especifico.apellido}':", notas_profesor)
@@ -383,10 +380,12 @@ def consultas_orm(user_id=None):
     print("Notas con observación 'Reprobado':", notas_observacion_especifica)
 
     # Consulta 49: Obtener todas las notas de un estudiante ordenadas por asignatura
-    notas_estudiante_ordenadas_asignatura = DetalleNota.objects.filter(estudiante_id=estudiante_id).order_by('nota__asignatura__descripcion').select_related('nota', 'nota__asignatura')
-    print(f"Notas del estudiante con ID {estudiante_id} ordenadas por asignatura:")
-    for detalle_nota in notas_estudiante_ordenadas_asignatura:
-        print(f"- {detalle_nota.nota.asignatura}: {detalle_nota.nota} - Nota 1: {detalle_nota.nota1}")
+    notas_estudiante_ordenadas_asignatura = Nota.objects.filter(estudiante=estudiante_especifico,
+                                                                user_id=user_id).order_by('asignatura__nombre')
+    print(
+        f"Notas del estudiante '{estudiante_especifico.nombre} {estudiante_especifico.apellido}' ordenadas por asignatura:")
+    for nota in notas_estudiante_ordenadas_asignatura:
+        print(f"- {nota.asignatura}: {nota}")
 
     # Operación 50: Actualizar nota1 para alumnos con nota1 < 20
     Nota.objects.filter(nota1__lt=20).update(nota1=20)
@@ -403,20 +402,20 @@ def consultas_orm(user_id=None):
     # Operación 54: Actualizar todas las notas en un período específico
     notas_periodo_especifico = Nota.objects.filter(periodo=periodo_especifico)
     for nota in notas_periodo_especifico:
-        nota.nota1 += 1
-        nota.save()
+        nota.nota1 += 1  # Incrementa nota1 en 1
+        nota.save()  # Guarda el cambio en la nota
 
-    # Operación 55: Eliminar físicamente todas las notas de un estudiante
-    DetalleNota.objects.filter(estudiante_id=estudiante_id).hard_delete()
+    # Operación 55: Eliminar lógicamente todas las notas de un estudiante (mejor práctica)
+    Nota.objects.filter(estudiante_id=estudiante_id).delete()
 
-    # Operación 56: Eliminar lógicamente todas las notas de un estudiante
-    DetalleNota.objects.filter(estudiante_id=estudiante_id).delete()
+    # Operación 56: Eliminar lógicamente todas las notas de un período específico (mejor práctica)
+    Nota.objects.filter(periodo=periodo_especifico).delete()
 
-    # Operación 57: Eliminar físicamente todas las notas de un período específico
-    DetalleNota.objects.filter(nota__periodo=periodo_especifico).hard_delete()
+    # Operación 57: Eliminar lógicamente todas las notas que tengan una nota1 menor a 10 (mejor práctica)
+    Nota.objects.filter(nota1__lt=10).delete()
 
-    # Operación 58: Eliminar lógicamente todas las notas de un período específico
-    DetalleNota.objects.filter(nota__periodo=periodo_especifico).delete()
+    # Operación 58: Eliminar lógicamente todas las notas de un período específico (y sus detalles)
+    Nota.objects.filter(periodo=periodo_especifico, user_id=user_id).update(state=False)
 
     # Operación 59: Eliminar físicamente todos los detalles de notas que tengan una nota1 menor a 10
     notas_con_nota1_menor_a_10 = Nota.objects.filter(nota1__lt=10)
@@ -447,7 +446,6 @@ def consultas_orm(user_id=None):
                 nota1=round(random.uniform(0, 20), 2),  # Asignar nota1 aleatoria
                 nota2=round(random.uniform(0, 20), 2),  # Asignar nota2 aleatoria
                 recuperacion=round(random.uniform(0, 20), 2) if random.random() < 0.3 else None
-                # Asignar recuperación aleatoria
             )
             detalles_notas.append(detalle)
 
@@ -459,7 +457,7 @@ def consultas_orm(user_id=None):
 
 # Ejecutar inserciones y consultas
 if __name__ == '__main__':
-    create_user(create=True)  # Crear usuario solo si no existe
+    create_user()  # Crear usuario solo si no existe
     user = User.objects.get(username='poo')  # Obtener el usuario creado
     insertar_periodos(user)
     insertar_asignaturas(user)
@@ -467,5 +465,5 @@ if __name__ == '__main__':
     insertar_estudiantes(user)
     insertar_notas(user, Estudiante.objects.all(), Periodo.objects.all(), Asignatura.objects.all(),
                    Profesor.objects.all())
-    consultas_orm()
+    consultas_orm(user.id)
 

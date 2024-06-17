@@ -56,7 +56,7 @@ class Profesor(models.Model):
 class Estudiante(models.Model):  # Definición del modelo Estudiante
     nombre = models.CharField(max_length=100)
     apellido = models.CharField(max_length=100)
-    cedula = models.CharField(max_length=15, unique=True)
+    cedula = models.CharField(max_length=15, unique=False)
     fecha_nacimiento = models.DateField()
     email = models.EmailField()
 
